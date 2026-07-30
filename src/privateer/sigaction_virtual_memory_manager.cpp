@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <privateer/sigaction_virtual_memory_manager.hpp>
 #include <privateer/block_storage_factory.hpp>
 #include <privateer/utility/system.hpp>
@@ -642,29 +643,69 @@ void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
 }
 
 void sigaction_virtual_memory_manager::evict_if_needed() {
-    void* to_evict;
-    std::cout << "current memory size: " << present_blocks.size() * m_block_size << std::endl;
-    std::cout << "max memory size: " << m_max_mem_size << std::endl;
+    void* to_evict = (void*) 8888888888888888888ul;
     if ((present_blocks.size()*m_block_size) >= m_max_mem_size){
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
-        if (clean_lru.size() > 0){
-        to_evict = (void*) clean_lru.back();
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting clean block: {}", ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size);
-        clean_lru.pop_back();
+
+        auto lre_idx = both_lre.begin();
+        bool is_dirty = false;
+
+        if (both_lre.empty()) {
+            if (!clean_lru.empty()) {
+                to_evict = (void*) clean_lru.back();
+                is_dirty = false;
+            }
+            else {
+                to_evict = (void*) dirty_lru.back();
+                is_dirty = true;
+            }
+            goto done_select;
         }
-        else{
-        // std::cout << "I am failing, bye!" << std::endl;
-        to_evict = (void*) dirty_lru.back();
-        dirty_lru.pop_back();
-        // std::cout << "Hello from the other side" << std::endl;
-        uint64_t block_index = ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size;
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Stashing block: {}", block_index);
-        if (!m_block_storage->stash_block(to_evict, block_index)){
-            SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error stashing block with index {}", block_index);
-            exit(-1);
+
+        if (!clean_lru.empty()) {
+            to_evict = (void*) clean_lru.back();
+            is_dirty = false;
+            for (auto l_it = lre_idx; l_it != both_lre.end(); ++l_it) {
+                if (*l_it == clean_lru.back()) {
+                    lre_idx = l_it;
+                    goto out_clean;
+                }
+            }
+            goto done_select;
         }
-        stash_set.insert((uint64_t) to_evict);
+out_clean:
+
+        if (!dirty_lru.empty()) {
+            if (clean_lru.empty()) {
+                to_evict = (void*) dirty_lru.back();
+                is_dirty = true;
+            }
+            for (auto l_it = both_lre.begin(); l_it != lre_idx; ++l_it) {
+                if (*l_it == dirty_lru.back())
+                    goto done_select;
+            }
+            to_evict = (void*) dirty_lru.back();
+            is_dirty = true;
         }
+done_select:
+
+        if (is_dirty) {
+            dirty_lru.pop_back();
+            uint64_t block_index = ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size;
+            SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Stashing block: {}", block_index);
+            if (!m_block_storage->stash_block(to_evict, block_index)){
+                SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error stashing block with index {}", block_index);
+                exit(-1);
+            }
+            stash_set.insert((uint64_t) to_evict);
+        }
+        else {
+            SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting clean block: {}", ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size);
+            clean_lru.pop_back();
+        }
+
+        both_lre.remove((uint64_t) to_evict);
+        both_lre.push_front((uint64_t) to_evict);
 
         int protect_status = mprotect(to_evict, m_block_size, PROT_NONE);
         if (protect_status == -1){

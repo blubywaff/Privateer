@@ -51,6 +51,7 @@ private:
     // SIGACTION-specific members
     std::list<uint64_t> clean_lru;
     std::list<uint64_t> dirty_lru;
+    std::list<uint64_t> both_lre;
     std::set<uint64_t> stash_set;
     std::set<uint64_t> present_blocks;
     
