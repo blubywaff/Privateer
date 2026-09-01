@@ -1,3 +1,4 @@
+#include <cstdint>
 #include <privateer/sigaction_virtual_memory_manager.hpp>
 #include <privateer/block_storage_factory.hpp>
 #include <privateer/utility/system.hpp>
@@ -255,7 +256,7 @@ void sigaction_virtual_memory_manager::msync() {
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: msync() - Msync Write Dirty LRU");
     // TODO: Implement full msync logic from original
     // This is a placeholder
-    std::vector<uint64_t> dirty_lru_vector(dirty_lru.begin(), dirty_lru.end());
+    std::vector<uint64_t> dirty_lru_vector(dirty.begin(), dirty.end());
     run_parallel_for_count(dirty_lru_vector.size(), [&](size_t index) {
       void* block_address = (void*) dirty_lru_vector[index];
         // if (stash_set.find((uint64_t) block_address) == stash_set.end()){
@@ -275,11 +276,11 @@ void sigaction_virtual_memory_manager::msync() {
         }
         {
           std::lock_guard<std::mutex> lock(sig_handler_mutex);
-          clean_lru.push_front((uint64_t)block_address);
+          clean.insert((uint64_t)block_address);
         }
         // }
       });
-    dirty_lru.clear();
+    dirty.clear();
 
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: msync() - Msync Commit Stashed Blocks");
     std::vector<uint64_t> stash_vector(stash_set.begin(), stash_set.end());
@@ -362,13 +363,13 @@ bool sigaction_virtual_memory_manager::snapshot(const char* version_metadata_pat
 int sigaction_virtual_memory_manager::close() {
     msync();
 
-  for (auto it = present_blocks.begin(); it != present_blocks.end(); ++it) {
-    void* address = (void*)*it;
+  for (auto it = clock.begin(); it != clock.end(); ++it) {
+    void* address = (void*)it->first;
     int status = munmap(address, m_block_size);
     if (status == -1) {
       SPDLOG_LOGGER_ERROR(spdlog::default_logger(),
         "virtual_memory_manager: Error unmapping region with address {} - {}",
-        *it, strerror(errno));
+        it->first, strerror(errno));
       return -1;
     }
   }
@@ -389,24 +390,6 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
       uint64_t block_index = (fault_address - start_address) / m_block_size;
       uint64_t block_address = start_address + block_index * m_block_size;
       SPDLOG_TRACE("virtual_memory_manager: handler() - Faulted on block: {}", block_index);
-      //SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Faulted on block address: {}", block_address - start_address);
-      /*
-      for(auto i : present_blocks) {
-        std::cout << "indices: " << (i - start_address) / m_block_size << std::endl;
-      }
-      */
-      // std::cout << "thread: " << omp_get_thread_num() << " Faulted on block: " << (block_index % num_locks) << std::endl;
-      // const std::lock_guard<std::mutex> lock(blocks_locks[block_index]); // lock(blocks_locks[block_index % num_locks]);
-      // std::cout << "thread: " << omp_get_thread_num() << " grabbed lock number: " << (block_index % num_locks) << std::endl;
-      /*
-         if (fault_address < (uint64_t) start_address || fault_address >= (uint64_t) start_address + m_region_max_capacity){
-         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Faulting address out of range");
-         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Faulting address: {}", (uint64_t) fault_address);
-         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Start: {}", (uint64_t) start_address);
-         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "End: {}", (uint64_t) start_address + m_region_max_capacity);
-         exit(-1);
-         }
-        //*/
       // Handle block fault
       ucontext_t *ctx = (ucontext_t *) ctx_void_ptr;
       bool is_write_fault = ctx->uc_mcontext.gregs[REG_ERR] & 0x2;
@@ -416,12 +399,13 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
         exit(-1);
       }
 
-      if (present_blocks.find((uint64_t) block_address) != present_blocks.end()){ // Block is present in-memory (just change prot and LRU if needed)
+      if (clock.find((uint64_t) block_address) != clock.end()){ // Block is present in-memory (just change prot and LRU if needed
+        clock[(uint64_t) block_address].ready = false;
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Block present in memory");
         if (is_write_fault){
           // Move from clean_lru to dirty_lru
-          clean_lru.remove((uint64_t) block_address);
-          dirty_lru.push_front((uint64_t) block_address);
+          clean.erase((uint64_t) block_address);
+          dirty.insert((uint64_t) block_address);
           if (stash_set.find(block_address) != stash_set.end()){
             // std::cout << "STASHED TO CLEAN TO DIRTY" << std::endl;
             if (!m_block_storage->unstash_block(block_index)){
@@ -582,13 +566,13 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
           }
         }
         // Update LRUs
+        clock[(uint64_t) block_address].ready = false;
         if (is_write_fault){
-          dirty_lru.push_front(block_address);
+          dirty.insert(block_address);
         }
         else{
-          clean_lru.push_front(block_address);
+          clean.insert(block_address);
         }
-        present_blocks.insert((uint64_t)block_address);
       }
       SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - done");
 }
@@ -596,12 +580,11 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
 void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), 
         "sigaction_virtual_memory_manager: update_metadata()");
-    
-    if (present_blocks.size() == 0) {
+
+    if (clock.size() == 0)
         return;
-    }
-    
-    size_t max_address = *present_blocks.rbegin();
+
+    size_t max_address = clock.rbegin()->first;
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: update_metadata()");
 
     size_t current_size = max_address - (uint64_t) m_region_start_address + m_block_size;
@@ -641,41 +624,62 @@ void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
         "sigaction_virtual_memory_manager: update_metadata() - done");
 }
 
-void sigaction_virtual_memory_manager::evict_if_needed() {
-    void* to_evict;
-    if ((present_blocks.size()*m_block_size) >= m_max_mem_size){
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
-        if (clean_lru.size() > 0){
-        to_evict = (void*) clean_lru.back();
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting clean block: {}", ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size);
-        clean_lru.pop_back();
+uint64_t sigaction_virtual_memory_manager::tick_clock() {
+    auto it = clock.lower_bound(clk_last_key);
+    if (it == clock.end())
+        it = clock.begin();
+    while (!it->second.ready) {
+        void* block_address = (void*) it->first;
+        int stat = mprotect(block_address, m_block_size, PROT_NONE);
+        if (stat == -1) {
+            SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "tick_clock: failed to prot none");
+            exit(-1);
         }
-        else{
-        // std::cout << "I am failing, bye!" << std::endl;
-        to_evict = (void*) dirty_lru.back();
-        dirty_lru.pop_back();
-        // std::cout << "Hello from the other side" << std::endl;
+        it->second.ready = true;
+        ++it;
+        if (it == clock.end())
+            it = clock.begin();
+    }
+    clk_last_key = it->first;
+    return clk_last_key;
+}
+
+void sigaction_virtual_memory_manager::evict_if_needed() {
+    if ((clock.size()*m_block_size) < m_max_mem_size)
+        return;
+
+    SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
+
+    void* to_evict = (void*) tick_clock();
+
+    if (clean.erase((uint64_t) to_evict)) {
+        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting clean block: {}", ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size);
+    }
+    else if (dirty.erase((uint64_t) to_evict)) {
         uint64_t block_index = ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size;
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Stashing block: {}", block_index);
-        if (!m_block_storage->stash_block(to_evict, block_index)){
+        if (!m_block_storage->stash_block(to_evict, block_index)) {
             SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error stashing block with index {}", block_index);
             exit(-1);
         }
         stash_set.insert((uint64_t) to_evict);
-        }
+    }
+    else {
+        SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "evict_if_needed(): evicting block is neither clean nor dirty");
+        exit(-1);
+    }
 
-        int protect_status = mprotect(to_evict, m_block_size, PROT_NONE);
-        if (protect_status == -1){
+    int protect_status = mprotect(to_evict, m_block_size, PROT_NONE);
+    if (protect_status == -1) {
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error evicting address {}", to_evict);
         exit(-1);
-        }
+    }
 
-        int madvise_status = madvise(to_evict, m_block_size, MADV_DONTNEED);
-        if (madvise_status == -1){
+    int madvise_status = madvise(to_evict, m_block_size, MADV_DONTNEED);
+    if (madvise_status == -1) {
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error madvising address {}", to_evict);
         exit(-1);
-        }
-
-        present_blocks.erase((uint64_t) to_evict);
     }
+
+    clock.erase((uint64_t) to_evict);
 }

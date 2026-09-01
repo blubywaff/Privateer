@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <privateer/virtual_memory_manager_base.hpp>
 #include <list>
 #include <set>
@@ -47,12 +48,18 @@ protected:
 
 private:
     void evict_if_needed();
+    uint64_t tick_clock();
+
+    struct _clock_info {
+        bool ready;
+    };
 
     // SIGACTION-specific members
-    std::list<uint64_t> clean_lru;
-    std::list<uint64_t> dirty_lru;
+    std::map<uint64_t, _clock_info> clock;
+    uint64_t clk_last_key;
+    std::set<uint64_t> clean;
+    std::set<uint64_t> dirty;
     std::set<uint64_t> stash_set;
-    std::set<uint64_t> present_blocks;
     
     static const size_t MAX_MEM_DEFAULT_BLOCKS = 16384;
     std::mutex sig_handler_mutex;
