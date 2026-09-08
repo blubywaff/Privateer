@@ -415,7 +415,8 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
             stash_set.erase(block_address);
           }
         }
-        int mprotect_stat = mprotect((void*) block_address, m_block_size, PROT_READ | PROT_WRITE);
+        int prot = dirty.count((uint64_t) block_address) ? PROT_WRITE : 0;
+        int mprotect_stat = mprotect((void*) block_address, m_block_size, PROT_READ | prot);
         if (mprotect_stat == -1){
           SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: mprotect error for block with address: {} {}", (uint64_t) block_address, strerror(errno));
           exit(-1);
