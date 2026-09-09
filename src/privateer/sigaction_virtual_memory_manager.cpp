@@ -389,7 +389,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
       uint64_t start_address = (uint64_t) m_region_start_address;
       uint64_t block_index = (fault_address - start_address) / m_block_size;
       uint64_t block_address = start_address + block_index * m_block_size;
-      SPDLOG_TRACE("virtual_memory_manager: handler() - Faulted on block: {}", block_index);
+      SPDLOG_TRACE("virtual_memory_manager: handler() - Faulted on block: {} {}", block_index, (void*)block_address);
       // Handle block fault
       ucontext_t *ctx = (ucontext_t *) ctx_void_ptr;
       bool is_write_fault = ctx->uc_mcontext.gregs[REG_ERR] & 0x2;
@@ -661,6 +661,8 @@ void sigaction_virtual_memory_manager::evict_if_needed() {
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
 
     void* to_evict = (void*) tick_clock();
+    SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Selected {}", to_evict);
+
     clock.erase((uint64_t) to_evict);
 
     if (clean.erase((uint64_t) to_evict)) {
