@@ -411,7 +411,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
           // Move from clean_lru to dirty_lru
           int res = clean.erase((uint64_t) block_address);
           res ^= dirty.insert((uint64_t) block_address).second;
-          if (res != 1) {
+          if (res) {
               SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: handler() - Clock entry not clean nor dirty");
               exit(-1);
           }
@@ -671,6 +671,11 @@ void sigaction_virtual_memory_manager::evict_if_needed() {
     else if (dirty.erase((uint64_t) to_evict)) {
         uint64_t block_index = ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size;
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Stashing block: {}", block_index);
+        int protect_status = mprotect(to_evict, m_block_size, PROT_READ);
+        if (protect_status == -1) {
+            SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error evicting address {}", to_evict);
+            exit(-1);
+        }
         if (!m_block_storage->stash_block(to_evict, block_index)) {
             SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error stashing block with index {}", block_index);
             exit(-1);
