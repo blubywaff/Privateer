@@ -56,7 +56,7 @@ private:
 
     // SIGACTION-specific members
     std::map<uint64_t, _clock_info> clock;
-    uint64_t clk_last_key;
+    uint64_t clk_last_key {0};
     std::set<uint64_t> clean;
     std::set<uint64_t> dirty;
     std::set<uint64_t> stash_set;

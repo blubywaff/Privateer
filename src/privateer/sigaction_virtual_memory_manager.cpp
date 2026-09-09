@@ -400,12 +400,21 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
       }
 
       if (clock.find((uint64_t) block_address) != clock.end()){ // Block is present in-memory (just change prot and LRU if needed
-        clock[(uint64_t) block_address].ready = false;
+        auto it = clock.find((uint64_t) block_address);
+        if (it == clock.end()) {
+            SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: handler() - Clock presence inconsistent");
+            exit(-1);
+        }
+        it->second.ready = false;
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Block present in memory");
         if (is_write_fault){
           // Move from clean_lru to dirty_lru
-          clean.erase((uint64_t) block_address);
-          dirty.insert((uint64_t) block_address);
+          int res = clean.erase((uint64_t) block_address);
+          res ^= dirty.insert((uint64_t) block_address).second;
+          if (res != 1) {
+              SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: handler() - Clock entry not clean nor dirty");
+              exit(-1);
+          }
           if (stash_set.find(block_address) != stash_set.end()){
             // std::cout << "STASHED TO CLEAN TO DIRTY" << std::endl;
             if (!m_block_storage->unstash_block(block_index)){
@@ -567,7 +576,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
           }
         }
         // Update LRUs
-        clock[(uint64_t) block_address].ready = false;
+        clock.insert({(uint64_t) block_address, {false}});
         if (is_write_fault){
           dirty.insert(block_address);
         }
@@ -652,6 +661,7 @@ void sigaction_virtual_memory_manager::evict_if_needed() {
     SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
 
     void* to_evict = (void*) tick_clock();
+    clock.erase((uint64_t) to_evict);
 
     if (clean.erase((uint64_t) to_evict)) {
         SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting clean block: {}", ((uint64_t) to_evict - (uint64_t) m_region_start_address) / m_block_size);
@@ -682,5 +692,4 @@ void sigaction_virtual_memory_manager::evict_if_needed() {
         exit(-1);
     }
 
-    clock.erase((uint64_t) to_evict);
 }
