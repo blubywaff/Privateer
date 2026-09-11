@@ -174,8 +174,6 @@ sigaction_virtual_memory_manager::sigaction_virtual_memory_manager(
     exit(-1);
     }
     
-    // std::cout << "Privateer Open 255" << std::endl;
-    // std::cout << "num_blocks: " << num_blocks << std::endl;
     blocks_ids = new std::string[num_blocks];
     char* metadata_content = new char[metadata_size];
     size_t read = ::pread(metadata_fd, (void*) metadata_content, metadata_size, 0);
@@ -183,30 +181,22 @@ sigaction_virtual_memory_manager::sigaction_virtual_memory_manager(
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error reading metadata - {}", strerror(errno));
         exit(-1);
     }
-    // std::cout << "Privateer Open 264" << std::endl;
     std::string all_hashes(metadata_content, metadata_size);
     
     uint64_t offset = 0;
-    // std::cout << "Privateer: Metadata size = " << metadata_size  << std::endl;
     for (size_t i = 0; i < metadata_size; i += HASH_SIZE){
-        // std::cout << "Privateer: Initializing blocks and regions, iteration no. " << i << std::endl;
-        // std::cout << "blocks_ids_index: " << (i / HASH_SIZE) << std::endl;
         std::string block_hash(all_hashes, i, HASH_SIZE);
-        // std::cout << "before accessing array" << std::endl;
         blocks_ids[i / HASH_SIZE] = block_hash;
     }
 
-    // std::cout << "Privateer Open 275" << std::endl;
     size_t num_occupied_blocks = metadata_size / HASH_SIZE;
     for (size_t i = num_occupied_blocks; i < num_blocks; i++){
-        // std::cout << "blocks_ids_index Next: " << i << std::endl;
         blocks_ids[i] = EMPTY_BLOCK_HASH;
     }
 
     // blocks_locks = new std::mutex[num_blocks];
     
     delete [] metadata_content;
-    // std::cout << "Privateer Open 285" << std::endl;
     
 
     size_t max_mem_size_blocks = utility::get_environment_variable("PRIVATEER_MAX_MEM_BLOCKS");
@@ -221,7 +211,6 @@ sigaction_virtual_memory_manager::sigaction_virtual_memory_manager(
     }
 #endif
 
-    // std::cout << "Privateer Open 292" << std::endl;
     // In some cases /dev/null file descriptor was affected, temporary solution is check and re-open
     struct stat st_dev_null;
     if (fstat(0,&st_dev_null) != 0){
@@ -395,14 +384,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
       uint64_t block_address = start_address + block_index * m_block_size;
       SPDLOG_TRACE("virtual_memory_manager: handler() - Faulted on block: {}", block_index);
       //SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Faulted on block address: {}", block_address - start_address);
-      /*
-      for(auto i : present_blocks) {
-        std::cout << "indices: " << (i - start_address) / m_block_size << std::endl;
-      }
-      */
-      // std::cout << "thread: " << omp_get_thread_num() << " Faulted on block: " << (block_index % num_locks) << std::endl;
       // const std::lock_guard<std::mutex> lock(blocks_locks[block_index]); // lock(blocks_locks[block_index % num_locks]);
-      // std::cout << "thread: " << omp_get_thread_num() << " grabbed lock number: " << (block_index % num_locks) << std::endl;
       /*
          if (fault_address < (uint64_t) start_address || fault_address >= (uint64_t) start_address + m_region_max_capacity){
          SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Faulting address out of range");
@@ -430,7 +412,6 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
           dirty_lru.push_front((uint64_t) block_address);
           both_lru.push_front((uint64_t) block_address);
           if (stash_set.find(block_address) != stash_set.end()){
-            // std::cout << "STASHED TO CLEAN TO DIRTY" << std::endl;
             if (!m_block_storage->unstash_block(block_index)){
               SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error unstashing block with index = {}", block_index);
               exit(-1);
@@ -455,13 +436,10 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
         std::string backing_block_path = "";
         std::string stash_backing_block_path = m_block_storage->get_block_stash_path(block_index);
         std::string blocks_path = m_block_storage->get_blocks_path();
-        // std::cout << "block_index = " << block_index << std::endl;
         if (!stash_backing_block_path.empty()){
-          // std::cout << "Getting block: " << block_index << " from stash " << stash_backing_block_path << std::endl;
           backing_block_path = stash_backing_block_path;
         }
         else if(blocks_ids[block_index].compare(EMPTY_BLOCK_HASH) != 0){
-          // std::cout << "Getting block: " << block_index << " from blocks " << blocks_ids[block_index] << std::endl;
           backing_block_path = m_block_storage->get_block_full_path(block_index, blocks_ids[block_index]) + "/" + blocks_ids[block_index];
         }
 
@@ -471,7 +449,6 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
           boost::uuids::uuid uuid = boost::uuids::random_generator()();
           const std::string block_name = boost::lexical_cast<std::string>(uuid);
           int shm_fd = shm_open(block_name.c_str(), O_CREAT | O_RDWR, S_IWUSR);
-          // std::cout << "shm_fd: " << shm_fd << std::endl;
           if (shm_fd == -1){
             SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error shm_open - {}", strerror(errno));
           }
@@ -502,9 +479,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
             exit(-1);
           }
 #ifdef USE_COMPRESSION
-          // std::cout << "USING COMPRESSION DECOMPRESSING" << std::endl;
           if (stash_backing_block_path.empty()){
-            // std::cout << "Reading backing block: " << backing_block_path << std::endl;
           
             size_t compressed_block_size = utility::get_file_size(backing_block_path.c_str());
             if (compressed_block_size > m_block_size){
@@ -528,7 +503,6 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
               SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error reading backing block {} for address {} - {}", backing_block_path, block_address, strerror(errno));
               exit(-1);
             }
-            // std::cout << "Reading stashed backing block: " << backing_block_path << std::endl;
           }
 #else
 
@@ -574,7 +548,6 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
 #endif
           // unstash block
           if ((!stash_backing_block_path.empty()) && is_write_fault){
-            // std::cout << "STASHED TO DIRTY: " << block_index << std::endl;
             if(!m_block_storage->unstash_block(block_index)){
               SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error un-stashing block with index = {}", block_index);
               exit(-1);
@@ -615,8 +588,6 @@ void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
 
     size_t current_size = max_address - (uint64_t) m_region_start_address + m_block_size;
     size_t num_blocks = current_size / m_block_size; // m_region_max_capacity / m_block_size;
-    // std::cout << "update_metadata() current_size: " << current_size << std::endl;
-    // std::cout << "update_metadata() num_blocks:   " << num_blocks << std::endl;
     char* blocks_bytes = new char[num_blocks*HASH_SIZE];
     for (size_t i = 0 ; i < num_blocks ; i++){
         const char* block_hash_bytes = blocks_ids[i].c_str();
@@ -629,7 +600,6 @@ void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
     }
 
     std::string metadata_path = m_version_metadata_path + "/_metadata";
-    // std::cout << "update metadata to path: " << metadata_path << std::endl;
     int metadata_fd = open(metadata_path.c_str(), O_RDWR);
     if (metadata_fd == -1){
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "virtual_memory_manager: Error opening metadata file - {}", strerror(errno));
