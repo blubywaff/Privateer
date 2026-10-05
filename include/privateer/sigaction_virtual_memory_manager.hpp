@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <privateer/virtual_memory_manager_base.hpp>
 #include <list>
 #include <set>
@@ -52,8 +53,10 @@ private:
     std::list<uint64_t> clean_lru;
     std::list<uint64_t> dirty_lru;
     std::list<uint64_t> both_lru;
+    std::list<uint64_t> slow_lru;
     std::set<uint64_t> stash_set;
     std::set<uint64_t> present_blocks;
+    uint64_t max_fast_blocks;
     
     static const size_t MAX_MEM_DEFAULT_BLOCKS = 16384;
     std::mutex sig_handler_mutex;
