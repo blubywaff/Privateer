@@ -404,7 +404,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
       }
 
       if (present_blocks.find((uint64_t) block_address) != present_blocks.end()){ // Block is present in-memory (just change prot and LRU if needed)
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Block present in memory");
+        SPDLOG_LOGGER_TRACE(spdlog::default_logger(), "virtual_memory_manager: handler() - Block present in memory");
         if (is_write_fault){
           // Move from clean_lru to dirty_lru
           clean_lru.remove((uint64_t) block_address);
@@ -426,7 +426,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
         }
       }
       else{ // block is not present in-memory
-        SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - Block is not present in memory");
+        SPDLOG_LOGGER_TRACE(spdlog::default_logger(), "virtual_memory_manager: handler() - Block is not present in memory");
         evict_if_needed();
 
         int prot = is_write_fault ? PROT_WRITE : PROT_READ;
@@ -572,7 +572,7 @@ void sigaction_virtual_memory_manager::handler(int sig, siginfo_t* si, void* ctx
         }
         present_blocks.insert((uint64_t)block_address);
       }
-      SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: handler() - done");
+      SPDLOG_LOGGER_TRACE(spdlog::default_logger(), "virtual_memory_manager: handler() - done");
 }
 
 void sigaction_virtual_memory_manager::update_metadata(int sub_region_index) {
@@ -624,7 +624,7 @@ void sigaction_virtual_memory_manager::evict_if_needed() {
     if ((present_blocks.size()*m_block_size) < m_max_mem_size)
         return;
 
-    SPDLOG_LOGGER_INFO(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
+    SPDLOG_LOGGER_TRACE(spdlog::default_logger(), "virtual_memory_manager: evict_if_needed() - Evicting");
 
     uint64_t to_evict = both_lru.back();
     both_lru.pop_back();
