@@ -113,6 +113,7 @@ public:
     base_dir_path = std::string(base_path);
     blocks_dir_path = std::string(base_path) + "/" + "blocks";
     stash_dir_path = std::string(stash_base_path) + "/" + "stash";
+    init_block_size();
   }
 
   /**
