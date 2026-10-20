@@ -65,8 +65,14 @@ public:
    * @param stash_base_path 
    */
   Privateer(int action, const char* _base_path, const char* _stash_base_path){
+    const char* base_path = std::getenv("PRIVATEER_BASE_PATH");
+    const char* stash_base_path = std::getenv("PRIVATEER_STASH_PATH");
+    if (!base_path)
+        base_path = _base_path;
+    if (!stash_base_path)
+        stash_base_path = _stash_base_path;
  #ifdef SIGACTION
-      SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor (with stash path) with SIGACTION");
+      SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor (with stash path) with SIGACTION base '{}' stash '{}'", base_path, stash_base_path);
 #endif
 
 #ifdef USERFAULTFD
@@ -76,12 +82,6 @@ public:
       SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Invalid action");
       exit(-1);
     }
-    const char* base_path = std::getenv("PRIVATEER_BASE_PATH");
-    const char* stash_base_path = std::getenv("PRIVATEER_STASH_PATH");
-    if (!base_path)
-        base_path = _base_path;
-    if (!stash_base_path)
-        stash_base_path = _stash_base_path;
     if (action == CREATE){
       if (utility::directory_exists(base_path)){
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating datastore - base directory already exists, action must be PRIVATEER::OPEN");
