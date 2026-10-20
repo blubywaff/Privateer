@@ -53,44 +53,9 @@ public:
    * @param action
    * @param base_path 
    */
-    Privateer(int action, const char* base_path){
-#ifdef SIGACTION
-      SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor with SIGACTION");
-#endif
-
-#ifdef USERFAULTFD
-      SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor with USERFAULTFD");
-#endif
-
-    if (action != CREATE && action != OPEN){
-      SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Invalid action");
-      exit(-1);
-    }
-    if (action == CREATE){
-      if (utility::directory_exists(base_path)){ // Do nothing, use existing
-        /* SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating datastore - base directory already exists, action must be PRIVATEER::OPEN");
-        exit(-1); */
-        //spdlog::warn("Privateer: Using existing Privateer root dir at {}", base_path);
-        base_dir_path = std::string(base_path);
-        blocks_dir_path = std::string(base_path) + "/" + "blocks";
-        stash_dir_path = std::string(base_path) + "/" + "stash";
-        // return; // TODO: uncommented in uffd variant?
-      }
-      else if (!utility::create_directory(base_path)){
-        SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating base directory at {} - {}", base_path, strerror(errno));
-        exit(-1);
-      }
-      init_block_size();
-    }
-
-    if (action == OPEN && !utility::directory_exists(base_path)){
-      SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating datastore - base directory does not exist, action must be PRIVATEER::CREATE");
-      exit(-1);
-    }
-    base_dir_path = std::string(base_path);
-    blocks_dir_path = std::string(base_path) + "/" + "blocks";
-    stash_dir_path = std::string(base_path) + "/" + "stash";
-  }
+    Privateer(int action, const char* base_path)
+        : Privateer(action, base_path, base_path)
+    {}
 
   /**
    * @brief Construct a new Privateer object with a specified stash path
@@ -99,7 +64,7 @@ public:
    * @param base_path 
    * @param stash_base_path 
    */
-  Privateer(int action, const char* base_path, const char* stash_base_path){
+  Privateer(int action, const char* _base_path, const char* _stash_base_path){
  #ifdef SIGACTION
       SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor (with stash path) with SIGACTION");
 #endif
@@ -109,8 +74,14 @@ public:
 #endif
     if (action != CREATE && action != OPEN){
       SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Invalid action");
-    exit(-1);
+      exit(-1);
     }
+    const char* base_path = std::getenv("PRIVATEER_BASE_PATH");
+    const char* stash_base_path = std::getenv("PRIVATEER_STASH_PATH");
+    if (!base_path)
+        base_path = _base_path;
+    if (!stash_base_path)
+        stash_base_path = _stash_base_path;
     if (action == CREATE){
       if (utility::directory_exists(base_path)){
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating datastore - base directory already exists, action must be PRIVATEER::OPEN");
