@@ -65,6 +65,7 @@ public:
    * @param stash_base_path 
    */
   Privateer(int action, const char* _base_path, const char* _stash_base_path){
+    SPDLOG_LOGGER_INFO(spdlog::default_logger(), "Privateer: Constructor (with stash path) input base '{}' stash '{}'", _base_path, _stash_base_path);
     const char* base_path = std::getenv("PRIVATEER_BASE_PATH");
     const char* stash_base_path = std::getenv("PRIVATEER_STASH_PATH");
     if (!base_path)
