@@ -84,19 +84,10 @@ public:
       exit(-1);
     }
     if (action == CREATE){
-      if (utility::directory_exists(base_path)){
-        SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating datastore - base directory already exists, action must be PRIVATEER::OPEN");
-        exit(-1);
-      }
-
-      if (!utility::create_directory(base_path)){
+      if (!utility::directory_exists(base_path) && !utility::create_directory(base_path)){
         SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating base directory at {} - {}", base_path, strerror(errno));
         exit(-1);
       }
-      /* if (!utility::create_directory(stash_base_path)){
-        SPDLOG_LOGGER_ERROR(spdlog::default_logger(), "Privateer: Error creating stash directory at {} - {}", stash_base_path, strerror(errno));
-        exit(-1);
-      } */
     }
     if (!utility::directory_exists(stash_base_path)){
       if (!utility::create_directory(stash_base_path)){
